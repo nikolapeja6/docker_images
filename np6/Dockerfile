@@ -2,26 +2,53 @@
 # base image
 FROM ubuntu:18.04
 
-# Update Ubuntu Software repository
-RUN apt-get update -y
-
 # install additional tools - standard
-RUN apt install git -y
-RUN apt install graphviz -y
-RUN apt install graphviz-dev -y
-RUN apt install pkg-config -y
-RUN apt install coinor-cbc -y
-RUN apt install cmake -y
-RUN apt install make -y
-RUN apt install python -y
+RUN apt-get update -y && apt install -y --no-install-recommends \
+    git \
+    graphviz \
+    graphviz-dev \
+    pkg-config \
+    coinor-cbc \
+    cmake \
+    make \
+    python \
+    gcc \
+    g++ \
+    ca-certificates \
+    && apt-get update -y \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 
 # install additional tools - manual
-# download
-RUN git clone http://llvm.org/git/llvm.git --branch release_60 --depth 1
-RUN cd llvm/tools && git clone http://llvm.org/git/clang.git --branch release_60 --depth 1 
-RUN cd llvm/tools && git clone http://llvm.org/git/polly.git --branch release_60 --depth 1
+RUN git clone https://github.com/llvm/llvm-project --branch release/6.x --depth 1
+
 # compile
-RUN cd llvm && mkdir _build
-RUN cd llvm/_build && cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLLVM_INSTALL_UTILS=ON -DLLVM_TARGETS_TO_BUILD="X86" -DCMAKE_INSTALL_PREFIX=$HOME/llvm-6.0
-RUN cd llvm/_build && make
-RUN cd llvm/_build && make install
+RUN mkdir -p llvm-project/llvm/_build llvm-project/llvm/tools/ && cp -r llvm-project/polly llvm-project/llvm/tools/ && cp -r llvm-project/clang llvm-project/llvm/tools/
+RUN cd llvm-project/llvm/_build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DLLVM_INSTALL_UTILS=ON -DLLVM_TARGETS_TO_BUILD="X86" -DCMAKE_INSTALL_PREFIX=$HOME/llvm-6.0 \
+    && make \
+    && make install \
+    && cd ../../../ && rm -rf llvm-project
+
+####################
+# dhls
+#################
+RUN git clone https://github.com/lana555/dynamatic.git && cd dynamatic && git checkout b1f302209bb6b2185f0525cc41fb2da1d1773a5b
+
+# elastic pass
+RUN cd dynamatic/elastic-circuits &&  mkdir _build && cd _build && cmake .. -DLLVM_ROOT=$HOME/llvm-6.0 && make
+# change the configs 
+RUN sed -ie 's/CLANG = .*/CLANG = \/root\/llvm-6.0\/bin\/clang/g' dynamatic/elastic-circuits/examples/Makefile && sed -ie 's/OPT = .*/OPT = \/root\/llvm-6.0\/bin\/opt/g' dynamatic/elastic-circuits/examples/Makefile
+
+
+# Buffers
+RUN cd dynamatic/Buffers && mkdir -p bin && make
+
+
+####################
+# run
+######################
+
+RUN cd dynamatic/elastic-circuits/examples/ && make name=loop_array  graph
+#RUN echo $(find dynamatic/ -name 'loop_array*.dot') && false
+#RUN dynamatic/Buffers/bin/buffers  buffers -filename=/dynamatic/elastic-circuits/_build/loop_array/loop_array_graph  -period=5
